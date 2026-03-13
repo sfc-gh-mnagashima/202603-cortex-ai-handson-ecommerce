@@ -1,0 +1,190 @@
+# コスメECサイト Cortex Agent 評価設定
+# Evaluation metrics: answer_correctness, logical_consistency, groundedness, execution_efficiency, tool_selection
+# Based on TruLens Agent GPA evaluation methodology
+
+# Evaluation task configuration
+evaluation:
+  agent_params:
+    agent_name: COSME_EC_HANDSON.ANALYTICS.COSME_ANALYST_AGENT
+    agent_type: CORTEX AGENT
+  run_params:
+    label: Cosme EC Agent Evaluation
+    description: >
+      コスメECサイト分析エージェントの評価。
+      回答正確性、論理的一貫性、実行効率、根拠性、ツール選択精度を評価する。
+      エージェントは5つのツール（ORDER_ANALYST, REVIEW_ANALYST, FAQ_SEARCH, PRODUCT_SEARCH, REVIEW_SEARCH）を持つ。
+  source_metadata:
+    type: dataset
+    dataset_name: COSME_EC_HANDSON.ANALYTICS.COSME_AGENT_EVALSET
+
+metrics:
+  # Built-in metrics
+  - answer_correctness
+  - logical_consistency
+
+  # Custom Metrics
+
+  # Groundedness metric - エージェント回答の根拠性評価
+  - name: groundedness
+    score_ranges:
+      min_score: [0, 0.33]
+      median_score: [0.34, 0.66]
+      max_score: [0.67, 1]
+    prompt: |
+      あなたはAIエージェントの回答の「根拠性（groundedness）」を評価しています。
+      根拠性とは、回答内の各実質的な主張が、実行トレースの具体的なエビデンスによって裏付けられているかを測定するものです。
+
+      重要: 主張とツール出力の整合性を評価してください。
+      主張が根拠ありとされるのは、必要なエビデンスが実際のツール出力（SQLクエリ結果、検索結果、レポート出力など）に含まれている場合のみです。
+
+      評価対象のエージェント回答:
+      {{output}}
+
+      完全なエージェント実行トレースがコンテキストとして提供されています:
+      - 実行されたすべてのツール呼び出し（ORDER_ANALYST, REVIEW_ANALYST, FAQ_SEARCH, PRODUCT_SEARCH, REVIEW_SEARCH）
+      - ツールの出力と取得データ
+      - 中間推論ステップ
+
+      スコアの例:
+
+      0（根拠なし）:
+        - 主要な主張がツール結果で裏付けられない、矛盾する、または捏造されている
+        - 売上金額、レビュー評価、商品名などがツール出力と一致しない
+        - 最上級表現（「最も人気」「一番売れている」）がエビデンスなしで使用されている
+        - FAQ回答がFAQ_SEARCHの結果と無関係な情報を含む
+
+      0.5（部分的根拠あり）:
+        - 一部の重要な主張はエビデンスに裏付けられているが、少なくとも1つの重要な結論が根拠不十分
+        - 数値データは正確だが解釈や比較結論が不完全
+        - 商品推薦の一部は検索結果に基づくが、追加情報が裏付けなし
+
+      1（完全に根拠あり）:
+        - すべての重要な主張がツール結果の具体的なエビデンスに追跡可能
+        - 金額（JPY）、評価、パーセンテージなどの数値がツール出力と一致
+        - エビデンスが不十分な場合、不確実性を明示している
+
+      評価ポイント:
+      - 売上金額、ROI、注文件数などの数値はSQLクエリ結果の行データで裏付けられているか？
+      - 商品説明、レビュー内容、FAQ回答は検索結果のスニペットに基づいているか？
+      - 比較や最上級の結論は明示的なエビデンスを使って正当化されているか？
+      - カテゴリ（スキンケア/メイク/ヘアケア/ボディケア/フレグランス）の分類は正確か？
+
+      以下の JSON 形式で回答してください（他のテキストは含めないでください）:
+      {"score": <0〜1の数値>, "reason": "<日本語で簡潔な理由>"}
+
+  # Execution Efficiency metric - 実行効率評価
+  - name: execution_efficiency
+    score_ranges:
+      min_score: [0, 0.33]
+      median_score: [0.34, 0.66]
+      max_score: [0.67, 1]
+    prompt: |
+      あなたはコスメECサイト分析エージェントの実行効率を評価しています。
+      実行効率とは、エージェントがユーザーの目標を達成するために利用可能なツールをどれだけ最適に使用したかを測定するものです。
+
+      エージェントは以下の5つのツールにアクセスできます:
+      1. ORDER_ANALYST (cortex_analyst) - 売上、注文、在庫などの定量分析（SQLクエリ生成）
+      2. REVIEW_ANALYST (cortex_analyst) - レビュー評価、センチメント分析の定量分析（SQLクエリ生成）
+      3. FAQ_SEARCH (cortex_search) - FAQドキュメントの検索（返品、配送、成分、会員情報等）
+      4. PRODUCT_SEARCH (cortex_search) - 商品の検索（商品名、ブランド、カテゴリ、説明文）
+      5. REVIEW_SEARCH (cortex_search) - レビューテキストの検索
+
+      実行トレースの分析:
+      - 実行時間: {{duration}} ミリ秒
+      - 実行されたツール呼び出しとその順序
+      - 発生したエラー: {{error}}
+      - 実行ステータス: {{status}}
+
+      スコアの例:
+
+      0（非効率）:
+        - クエリの複雑さに対して過剰または冗長なツール呼び出し
+        - 1〜2回の集中的な検索で十分なところ、広範な検索を繰り返し実行
+        - 回避可能なリトライ、ループ、バックトラッキング
+        - FAQ質問に対してAnalystツールを不要に呼び出し
+        - 単純な商品検索にAnalystツールを使用
+
+      0.5（やや効率的）:
+        - おおむね合理的なパスだが、1つの顕著な非効率がある
+        - 必要以上のツール呼び出しがやや多い、または重複した検索あり
+        - ほぼ直線的なフローだが、軽微なバックトラッキングあり
+
+      1（高効率）:
+        - リクエストから回答までの最小限の合理的なパス
+        - ツールの順序が簡潔で依存関係を認識している
+        - 冗長な検索や不要な呼び出しがない
+        - 複合的な質問では Search → Analyst の適切なチェーンを実行
+
+      評価ポイント:
+      - FAQ質問にはFAQ_SEARCHのみで十分か？不要なAnalyst呼び出しがないか？
+      - 商品+レビューの質問では、PRODUCT_SEARCH → REVIEW_SEARCH/REVIEW_ANALYSTの効率的なチェーンか？
+      - 純粋な数値分析にはAnalystツールのみで十分か？不要なSearchがないか？
+
+      以下の JSON 形式で回答してください（他のテキストは含めないでください）:
+      {"score": <0〜1の数値>, "reason": "<日本語で簡潔な理由>"}
+
+  # Tool Selection metric - ツール選択精度評価
+  - name: tool_selection
+    score_ranges:
+      min_score: [0, 0.33]
+      median_score: [0.34, 0.66]
+      max_score: [0.67, 1]
+    prompt: |
+      あなたはコスメECサイト分析エージェントのツール選択をサブ問題ルーティングタスクとして評価しています。
+      エージェントがクエリを必要なサブ問題に分解し、各サブ問題を正しいツールにマッピングしたかどうかを評価してください。
+
+      エージェントは以下の5つのツールにアクセスできます:
+      1. ORDER_ANALYST - 売上/注文/在庫の定量分析（SQL生成）
+      2. REVIEW_ANALYST - レビュー評価/センチメントの定量分析（SQL生成）
+      3. FAQ_SEARCH - FAQドキュメント検索（返品、配送、成分、ポイント、会員ランク）
+      4. PRODUCT_SEARCH - 商品検索（商品名、ブランド、カテゴリ、説明文、オーガニック）
+      5. REVIEW_SEARCH - レビューテキスト検索（ユーザーの感想、使用感）
+
+      実行トレースの分析:
+      - 実行されたツール呼び出しとその順序
+      - ユーザーの意図と必要なサブ問題
+      - ツールが不要な場合に使用されたツール
+      - スキップされた必要なサブ問題
+
+      Ground Truth Reference
+      - 利用可能な場合、エージェントが選択したツールを {{ground_truth}} と比較してください
+      - エージェントのツール呼び出しは ground truth データの tool_name キーと一致すべきです
+      - 正しいツール選択にはスコアを加算
+      - 過剰なツール呼び出しや ground truth にないツール呼び出しにはスコアを減算
+
+      サブ問題ルーティングの期待値:
+      - FAQ・ポリシー質問 → FAQ_SEARCH
+      - 商品の検索・探索 → PRODUCT_SEARCH
+      - レビューの内容・テキスト → REVIEW_SEARCH
+      - 売上・注文・在庫の集計 → ORDER_ANALYST
+      - レビュー評価・センチメントの統計 → REVIEW_ANALYST
+      - 商品 + レビューの複合質問 → PRODUCT_SEARCH + REVIEW_SEARCH/REVIEW_ANALYST
+      - 肌荒れ・成分関連の複合質問 → REVIEW_SEARCH + REVIEW_ANALYST
+
+      スコアの例:
+
+      0（ツール選択不良）:
+        - 複数の必要なサブ問題が間違ったツールにマッピングされている
+        - 重要なサブ問題が完全に省略されている
+        - FAQ質問にAnalystツールを使用、定量分析にSearchツールを使用
+        - ground truth データのツールと完全に不一致
+
+      0.5（やや適切なツール選択）:
+        - 大半のサブ問題は正しくマッピングされているが、1つの重要なマッピングが間違いまたは欠落
+        - 順序はおおむね合理的だが、軽微な依存関係の問題あり
+        - ground truth データの大部分のツールと一致
+
+      1（優れたツール選択）:
+        - クエリを必要なサブ問題に正しく分解
+        - 各サブ問題を最適なツールにマッピング
+        - 必要に応じてマルチツールワークフローを正しい依存関係順序で使用
+        - ground truth データのツールと完全または近似的に一致
+
+      評価ポイント:
+      - 定量的サブ問題と定性的サブ問題は正しく区別されているか？
+      - ORDER_ANALYST vs REVIEW_ANALYST の使い分けは適切か？
+      - FAQ_SEARCH vs PRODUCT_SEARCH vs REVIEW_SEARCH の使い分けは適切か？
+      - 複合質問での Search → Analyst チェーンは合理的か？
+
+      以下の JSON 形式で回答してください（他のテキストは含めないでください）:
+      {"score": <0〜1の数値>, "reason": "<日本語で簡潔な理由>"}
